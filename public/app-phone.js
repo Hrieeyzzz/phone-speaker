@@ -332,6 +332,16 @@
         S.id = msg.id;
         setStatus('live', 'joined relay');
         break;
+      case 'pc-output':
+        S.sampleRate = 48000;
+        el.now.textContent = 'Computer output is live';
+        if (S.playing) setStatus('live', 'streaming');
+        else el.hint.textContent = 'Tap to start playing';
+        break;
+      case 'pc-idle':
+        el.now.textContent = msg.error || 'Waiting for computer output…';
+        setStatus(S.wsOpen ? 'open' : 'closed', S.wsOpen ? 'connected' : 'reconnecting…');
+        break;
       case 'sender':
         if (msg.state === 'live') {
           el.now.textContent = `playing from the computer · ${msg.label || msg.source || ''}`;

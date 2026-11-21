@@ -869,22 +869,61 @@
     // mirror them on the phone page through the query string when scanning.
     connect();
     loadInfo();
+    const capState = document.getElementById('capture-state');
+    const capMessage = document.getElementById('capture-message');
+    const capNeeds = document.getElementById('capture-needs');
+    const capResult = document.getElementById('capture-test-result');
+    const capDevice = document.getElementById('capture-device');
+    let previousBytes = 0;
+    async function captureAction(action, extra = {}) {
+      const response = await fetch('/api/capture', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action, ...extra }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Output test failed');
+      return result;
+    }
+    async function refreshCapture() {
+      try {
+        const response = await fetch('/api/capture');
+        if (!response.ok) throw new Error('Output service unavailable');
+        const status = await response.json();
+        capState.textContent = status.live ? 'live' : status.state;
+        capMessage.textContent = status.error || (status.live ? 'Computer output is streaming. Connect your phone and tap Play.' : 'Waiting for computer output…');
+        capNeeds.textContent = status.preset && status.preset.needs || '';
+        els['src-pill'].textContent = status.live ? 'PC output live' : status.state;
+        els['st-format'].textContent = '48 kHz · 16-bit stereo';
+        els['st-sent'].textContent = fmtBytes(status.bytes);
+        els['st-batches'].textContent = status.batches.toLocaleString() + ' batches';
+        els['st-bitrate'].textContent = status.live ? Math.round(Math.max(0, status.bytes - previousBytes) * 8 / 1000) + ' kbps' : '—';
+        previousBytes = status.bytes;
+        const peak = status.peak || 0;
+        els['peak-db'].textContent = fmtDb(peak);
+        els['peak-bar'].style.width = Math.min(100, Math.max(0, (20 * Math.log10(Math.max(peak, 1e-6)) + 60) / 60 * 100)) + '%';
+      } catch (e) { capState.textContent = 'unavailable'; capMessage.textContent = e.message; }
+    }
+    async function refreshDevices() {
+      try {
+        const result = await captureAction('devices');
+        capDevice.replaceChildren(new Option('Automatic', ''));
+        for (const d of result.devices.filter(d => d.loopback)) {
+          const option = new Option(d.label, JSON.stringify({input:d.input, format:d.format}));
+          if (result.preset && result.preset.input === d.input) option.selected = true;
+          capDevice.add(option);
+        }
+      } catch (e) { capResult.textContent = e.message; }
+    }
+    document.getElementById('capture-retry').onclick = async () => { try { await captureAction('restart'); await refreshCapture(); } catch (e) { capResult.textContent = e.message; } };
+    document.getElementById('capture-refresh').onclick = refreshDevices;
+    document.getElementById('capture-test').onclick = async () => {
+      capResult.textContent = 'Testing computer output…';
+      try { const r = await captureAction('test', {device: true}); capResult.textContent = `Output test passed: ${r.batches} audio batches, peak ${r.peak}. Play audio on the computer to check the level.`; }
+      catch (e) { capResult.textContent = e.message; }
+    };
+    capDevice.onchange = async () => { try { await captureAction('device', {device: capDevice.value ? JSON.parse(capDevice.value) : null}); await refreshCapture(); } catch (e) { capResult.textContent = e.message; } };
+    refreshCapture(); refreshDevices(); setInterval(refreshCapture, 1000);
 
     // Diagnostics handle — used by the E2E suite and handy in DevTools.
     window.__phoneSpeaker = { state: S, log };
 
-    // ?source=mic|tab|file&autostart=1 lets you open a pre-configured page
-    // (handy as a desktop shortcut / kiosk link, and for automated tests).
-    const params = new URLSearchParams(location.search);
-    const wantSource = params.get('source');
-    if (wantSource && ['mic', 'tab', 'file'].includes(wantSource)) {
-      pickSource(wantSource);
-      if (params.get('autostart') === '1' && wantSource !== 'file') {
-        // Wait for the relay socket, then start.
-        const tryStart = () => (S.wsOpen ? start() : setTimeout(tryStart, 100));
-        tryStart();
-      }
-    }
     els['net-dot'].dataset.state = 'idle';
     els['net-text'].textContent = 'connecting…';
     renderStats();

@@ -78,7 +78,7 @@ function get(url) {
 }
 
 async function run() {
-  const app = await main({ port: 0, https: false, quiet: true });
+  const app = await main({ port: 0, https: false, quiet: true, capture: false });
   const port = app.ports.httpPort;
   const base = `http://127.0.0.1:${port}`;
   const wsBase = `ws://127.0.0.1:${port}`;
