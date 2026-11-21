@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#070a12">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Phone Speaker — phone</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📱%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/phone.css">
+</head>
+<body>
+<div class="aurora" aria-hidden="true"></div>
+
+<header>
+  <div class="brand"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg> Phone Speaker</div>
+  <div class="status" id="status"><span class="dot" data-state="idle"></span><span id="status-text">connecting…</span></div>
+</header>
+
+<main>
+  <section class="hero">
+    <canvas id="viz" width="600" height="220" aria-hidden="true"></canvas>
+    <button id="big-play" class="big-play" aria-label="Start playback">
+      <svg viewBox="0 0 24 24" width="54" height="54" aria-hidden="true"><path id="play-icon" fill="currentColor" d="M8 5v14l11-7z"/></svg>
+    </button>
+    <p class="hint" id="hint">Tap to start playing</p>
+    <p class="now" id="now">waiting for the computer…</p>
+  </section>
+
+  <section class="card">
+    <label class="vol">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg>
+      <input type="range" id="volume" min="0" max="100" value="100" aria-label="Volume">
+      <output id="volume-out">100%</output>
+    </label>
+    <div class="chips">
+      <button class="chip" id="screen-lock" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" style="vertical-align:-2px"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" d="M7 10.5V7.5a5 5 0 0 1 10 0v3M5.5 10.5h13v9h-13z"/></svg>
+        Keep screen awake
+      </button>
+      <button class="chip" id="latency-chip">buffer 150 ms</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="h">Connection</div>
+    <div class="grid">
+      <div><small>Buffer</small><b id="m-depth">—</b></div>
+      <div><small>Underruns</small><b id="m-underruns">0</b></div>
+      <div><small>Received</small><b id="m-recv">0 B</b></div>
+      <div><small>Rate</small><b id="m-rate">—</b></div>
+    </div>
+    <div class="depth">
+      <div class="depth-head"><span>Jitter buffer</span><span id="m-target">150 ms target</span></div>
+      <div class="depth-bar"><i id="depth-fill"></i><span class="depth-target" id="depth-target"></span></div>
+    </div>
+    <div class="warn" id="warn" hidden></div>
+  </section>
+
+  <section class="card slim">
+    <div class="h">How it works</div>
+    <p class="small">Audio travels from the computer to this page over your Wi-Fi and is played by an AudioWorklet with a small buffer. Keep the volume up. If playback stutters, lower the buffer on the computer’s page or move closer to the router.</p>
+  </section>
+</main>
+
+<footer>
+  <a href="/" id="back">computer page</a>
+  <span id="engine">—</span>
+</footer>
+
+<script src="/app-phone.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+{
+  "name": "phone-speaker",
+  "version": "1.0.0",
+  "description": "Turn your phone into a wireless speaker for your PC over the local network - no app install, no Bluetooth, no cables.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node relay-test.js",
+    "test:e2e": "node tests/e2e.js",
+    "make:wav": "node tests/make-wav.js"
+  },
+  "keywords": [
+    "audio",
+    "speaker",
+    "phone",
+    "websocket",
+    "pcm",
+    "audioworklet",
+    "lan",
+    "streaming"
+  ],
+  "author": "Hrieeyzzz",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "selfsigned": "^5.5.0",
+    "ws": "^8.18.0"
+  }
+}
