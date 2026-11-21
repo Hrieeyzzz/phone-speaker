@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node relay-test.js",
+    "test": "node relay-test.js && node tests/capture-test.js",
     "test:e2e": "node tests/e2e.js",
     "make:wav": "node tests/make-wav.js"
   },

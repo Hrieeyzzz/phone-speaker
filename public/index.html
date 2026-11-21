@@ -27,6 +27,21 @@
 </header>
 
 <main>
+  <section class="card" aria-labelledby="output-title">
+    <div class="h2-row"><h2 id="output-title">1 · Computer output</h2><span class="pill" id="capture-state">starting…</span></div>
+    <p>Audio from your computer plays on your phone automatically. Play music, a video, or a game, then scan the code below.</p>
+    <p class="muted small" id="capture-message" aria-live="polite">Checking the computer's audio output…</p>
+    <button class="btn" id="capture-retry">Retry output</button>
+    <button class="btn" id="capture-test">Test output</button>
+    <details class="phone-details"><summary>Output setup and troubleshooting</summary>
+      <p class="muted small" id="capture-needs"></p>
+      <label for="capture-device">Output monitor / loopback device</label>
+      <select id="capture-device"><option value="">Automatic</option></select>
+      <button class="btn" id="capture-refresh">Refresh devices</button>
+      <p class="muted small" id="capture-test-result" aria-live="polite"></p>
+    </details>
+  </section>
+  <div hidden>
   <section class="card sources" aria-labelledby="src-title">
     <h2 id="src-title">1 · Pick a source</h2>
     <div class="source-grid">
@@ -78,6 +93,7 @@
     </div>
   </section>
 
+  </div>
   <section class="card phones" aria-labelledby="phone-title">
     <div class="h2-row">
       <h2 id="phone-title">2 · Scan with your phone</h2>
@@ -87,9 +103,9 @@
       <img id="qr" alt="QR code that opens the phone page" width="232" height="232">
       <div class="qr-side">
         <p class="url" id="phone-url">…</p>
-        <p class="muted small">Same Wi-Fi as this computer. Accept the certificate warning — the audio itself never leaves your network.</p>
+        <p class="muted small">Same Wi-Fi as this computer. Accept the certificate warning if prompted, then tap Play on your phone.</p>
         <div class="urls" id="alt-urls"></div>
-        <div class="secure-note" id="secure-note" hidden>This page is not on HTTPS. Tab &amp; mic capture and AudioWorklet need it — open the <a id="https-link" href="#">secure page</a>.</div>
+        <div class="secure-note" id="secure-note" hidden>This page is not on HTTPS. AudioWorklet needs it — open the <a id="https-link" href="#">secure page</a>.</div>
       </div>
     </div>
   </section>
@@ -128,8 +144,8 @@
         <output id="vol-out">100%</output>
       </label>
       <label class="field">
-        <span>Batch size</span>
-        <input type="range" id="batch" min="10" max="60" step="5" value="20">
+        <span>Batch size (fixed for PC output)</span>
+        <input type="range" id="batch" disabled min="10" max="60" step="5" value="20">
         <output id="batch-out">20 ms</output>
       </label>
     </div>

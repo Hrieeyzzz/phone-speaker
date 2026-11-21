@@ -11,6 +11,11 @@
  *   node server.js                 # HTTP :3000 + HTTPS :3443
  *   PORT=8080 HTTPS_PORT=8443 node server.js
  *   NO_HTTPS=1 node server.js      # skip the self-signed HTTPS listener
+ *   CAPTURE_INPUT=... node server.js  # record a custom device instead of auto
+ *
+ * By default the server records this computer's own speaker mix with ffmpeg
+ * (see capture.js) and forwards it to every phone: there is no source picker,
+ * the phone simply becomes another speaker output for everything the PC plays.
  */
 
 const fs = require('fs');
@@ -20,6 +25,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
+const capture = require('./capture');
 
 const PORT = Number(process.env.PORT) || 3000;
 const HTTPS_PORT = Number(process.env.HTTPS_PORT) || 3443;
@@ -106,9 +112,40 @@ function json(res, status, body) {
   res.end(data);
 }
 
+function readJson(req, limit = 64 * 1024) {
+  return new Promise((resolve) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > limit) {
+        req.destroy();
+        return resolve(null);
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (!chunks.length) return resolve({});
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      } catch (e) {
+        resolve(null);
+      }
+    });
+    req.on('error', () => resolve(null));
+  });
+}
+
 function makeRequestHandler(relay, getPorts) {
-  return (req, res) => {
-    const url = new URL(req.url, 'http://localhost');
+  return async (req, res) => {
+    let url;
+    try {
+      url = new URL(req.url, 'http://localhost');
+    } catch (e) {
+      res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('400 Bad Request');
+      return;
+    }
     if (url.pathname === '/api/info') {
       const ports = getPorts();
       json(res, 200, {
@@ -122,7 +159,70 @@ function makeRequestHandler(relay, getPorts) {
         senders: relay.senderCount(),
         bytes: relay.bytes,
         uptime: Math.round((Date.now() - relay.startedAt) / 1000),
+        capture: relay.pcCapture ? relay.pcCapture.status() : null,
       });
+      return;
+    }
+
+    /* ---------------- PC output capture (no source picker) ---------------- */
+
+    if (url.pathname === '/api/capture') {
+      if (!relay.pcCapture) {
+        json(res, 404, { error: 'capture is not available on this server' });
+        return;
+      }
+      const status = relay.pcCapture.status();
+      if (req.method === 'POST') {
+        if (req.headers.origin) {
+          let origin;
+          try { origin = new URL(req.headers.origin); } catch (_) {}
+          if (!origin || origin.host !== req.headers.host) { json(res, 403, { error: 'origin not allowed' }); return; }
+        }
+        const body = (await readJson(req)) || {};
+        const action = body.action || url.searchParams.get('action') || '';
+        if (action === 'start' || action === 'restart') {
+          const out = action === 'restart' ? await relay.restartPcCapture() : await relay.pcCapture.start();
+          json(res, 200, out);
+          return;
+        }
+        if (action === 'stop') {
+          json(res, 200, relay.pcCapture.stop());
+          return;
+        }
+        if (action === 'test') {
+          const useTone = body.device !== true;
+          const result = await relay.pcCapture.test(useTone);
+          json(res, result.ok ? 200 : 500, result);
+          return;
+        }
+        if (action === 'device') {
+          try {
+            if (body.device === null) {
+              relay.pcCapture.config.device = null;
+              capture.saveConfig(relay.pcCapture.dir, relay.pcCapture.config);
+              json(res, 200, await relay.restartPcCapture());
+              return;
+            }
+            const requested = body.device || body;
+            const devices = await relay.pcCapture.refreshDevices();
+            const device = devices.find(d => d.input === requested.input && d.format === requested.format && d.loopback);
+            if (!device) throw new Error('Select a discovered output monitor or loopback device');
+            const out = await relay.pcCapture.useDevice(device);
+            json(res, 200, out);
+          } catch (e) {
+            json(res, 400, { error: e.message });
+          }
+          return;
+        }
+        if (action === 'devices') {
+          const devices = await relay.pcCapture.refreshDevices();
+          json(res, 200, { devices, preset: relay.pcCapture.status().preset });
+          return;
+        }
+        json(res, 400, { error: `unknown action "${action}"` });
+        return;
+      }
+      json(res, 200, status);
       return;
     }
 
@@ -184,6 +284,43 @@ class Relay {
     this.bytes = 0;
     this.batches = 0;
     this.heartbeat = null;
+    this.pcCapture = null; // PcCapture reading this computer's speaker mix
+  }
+
+  /**
+   * Start recording the PC's own output and fan every batch out to the
+   * phones. Called once at boot: the phone should just work when opened.
+   */
+  attachPcCapture(pcCapture) {
+    this.pcCapture = pcCapture;
+    pcCapture.onBatch = (buf) => {
+      this.bytes += buf.length;
+      this.batches++;
+      if (!this.receiverCount()) return; // nobody listening: drop, keep CPU low
+      for (const [peer] of this.receivers()) {
+        if (peer.readyState === peer.OPEN) {
+          // Never let a slow phone grow the server's socket buffer unbounded.
+          if (peer.bufferedAmount < 1024 * 1024) peer.send(buf, { binary: true });
+        }
+      }
+    };
+    pcCapture.onChange = (status) => {
+      this.broadcast({
+        type: status.live ? 'pc-output' : 'pc-idle',
+        state: status.state,
+        source: 'pc',
+        label: status.preset ? status.preset.label : 'PC output',
+        error: status.state === 'error' || status.state === 'unavailable' ? status.error : null,
+      });
+    };
+    return pcCapture.start();
+  }
+
+  /** Restart the PC-output capture (after a device change, say). */
+  async restartPcCapture() {
+    if (!this.pcCapture) return null;
+    this.pcCapture.stop();
+    return this.pcCapture.start();
   }
 
   addressList() {
@@ -269,7 +406,9 @@ class Relay {
 
       ws.on('message', (data, isBinary) => {
         if (isBinary) {
-          if (client.role !== 'sender') return; // phones never inject audio
+          // Senders are browser tabs (optional, for the file/mic/tab modes);
+          // phones never inject audio.
+          if (client.role !== 'sender' || this.pcCapture) return;
           this.bytes += data.length;
           this.batches++;
           for (const [peer] of this.receivers()) {
@@ -299,11 +438,20 @@ class Relay {
               senders: this.senderCount(),
               serverTime: Date.now(),
             });
+            if (client.role === 'receiver' && this.pcCapture) {
+              const status = this.pcCapture.status();
+              if (status.live) {
+                this.send(ws, { type: 'format', sampleRate: status.sampleRate, source: 'pc', label: status.preset ? status.preset.label : 'PC output' });
+                this.send(ws, { type: 'pc-output', state: status.state, source: 'pc', label: status.preset ? status.preset.label : 'PC output' });
+              } else if (status.error) {
+                this.send(ws, { type: 'pc-idle', state: status.state, source: 'pc', error: status.error });
+              }
+            }
             this.announcePeers();
             break;
           }
           case 'format': {
-            if (client.role !== 'sender') break;
+            if (client.role !== 'sender' || this.pcCapture) break;
             const rate = Number(msg.sampleRate);
             this.broadcast({
               type: 'format',
@@ -315,7 +463,7 @@ class Relay {
             break;
           }
           case 'sender-state': {
-            if (client.role !== 'sender') break;
+            if (client.role !== 'sender' || this.pcCapture) break;
             this.broadcast({
               type: 'sender',
               state: msg.state === 'live' ? 'live' : 'idle',
@@ -353,7 +501,7 @@ class Relay {
       ws.on('close', () => {
         const wasSender = client.role === 'sender';
         this.clients.delete(ws);
-        if (wasSender) this.broadcast({ type: 'sender', state: 'idle', senderId: client.id });
+        if (wasSender && !this.pcCapture) this.broadcast({ type: 'sender', state: 'idle', senderId: client.id });
         this.announcePeers();
       });
       ws.on('error', () => {});
@@ -481,6 +629,10 @@ async function main(options = {}) {
 
   const relay = new Relay();
   const ports = { httpPort, httpsPort: null };
+
+  // The speaker output of this computer — the default and only source.
+  const pcCapture = options.capture === false ? null : new capture.PcCapture({ dir: __dirname, env: process.env });
+  if (pcCapture) relay.attachPcCapture(pcCapture);
   const handler = makeRequestHandler(relay, () => ({ httpPort: ports.httpPort, httpsPort: ports.httpsPort }));
 
   const httpServer = http.createServer(handler);
@@ -545,10 +697,16 @@ async function main(options = {}) {
       console.log(`             ${p.url}`);
     }
     console.log('');
-    console.log('  1. Open the Computer URL here, pick a source, press Start.');
+    const cap = pcCapture ? pcCapture.status() : null;
+    if (cap) {
+      if (cap.state === 'live') console.log(`  Capture    ${cap.preset ? cap.preset.label : 'PC output'} — recording now`);
+      else if (cap.error) console.log(`  Capture    ⚠ ${cap.error}`);
+    }
+    console.log('  1. Play anything on this computer — the phone mirrors it.');
     console.log('  2. Scan the QR code with the phone (same Wi-Fi).');
     console.log('  3. Tap ▶ Start on the phone. Accept the certificate warning.');
     if (!httpsServer) console.log('\n  ⚠  HTTPS is off: AudioWorklet, tab capture and the mic will not work.');
+    if (cap && cap.preset && cap.preset.needs) console.log(`\n  Note: ${cap.preset.needs}`);
     console.log(`  ${line}`);
     console.log('');
   }
@@ -585,11 +743,12 @@ async function main(options = {}) {
         /* already closed */
       }
       relay.destroyAll();
+      if (pcCapture) pcCapture.destroy();
       setTimeout(finish, 30);
     });
   };
 
-  return { httpServer, httpsServer, relay, wss, ports, phones, close };
+  return { httpServer, httpsServer, relay, wss, ports, phones, capture: pcCapture, close };
 }
 
 if (require.main === module) {

@@ -1,155 +1,60 @@
-# 🔊 Phone Speaker
+# Phone Speaker
 
-**Turn your phone into a wireless speaker for your PC or laptop.**
-Run one tiny server on your computer, scan a QR code with your phone, and everything the computer plays comes out of the phone — **no app install, no cables, no Bluetooth pairing.**
+Turn a phone into a speaker for the computer on the same network. The server reads the computer's **output mix**, so games, music, videos and other applications all use the same stream. There is no browser source picker. The phone needs no app, but browsers require a tap to start playback.
 
-<p align="center">
-  <img alt="Computer page" src="docs/pc-page.png" width="62%">
-  <img alt="Phone page" src="docs/phone-page.png" width="27%">
-</p>
+## Get started
 
-| | |
-|---|---|
-| **Runs on** | Computer: Node.js 18+ · Phone: any modern browser (Chrome / Safari / Firefox / Edge) |
-| **Connection** | Same Wi-Fi network; the phone opens a plain URL — zero install |
-| **Audio** | 48 kHz · 16-bit · stereo PCM, sent in ~20 ms batches |
-| **Latency** | ≈ 0.2–0.5 s end to end (adjustable jitter buffer, default 150 ms) |
-| **License** | MIT |
+1. Install Node.js 18+ and a system **ffmpeg with the appropriate input devices**. Configure your operating system's output monitor as described below.
+2. On the computer, run:
+   ```sh
+   git clone https://github.com/Hrieeyzzz/phone-speaker.git
+   cd phone-speaker
+   npm install
+   npm start
+   ```
+   `start.bat` and `start.sh` are also available.
+3. Open the computer URL printed in the terminal. Check that **Computer output** is live, and play something on the computer.
+4. Connect the phone to the same Wi-Fi, scan the QR code, accept the local certificate warning if prompted, and tap Play. Adjust the phone's volume and jitter buffer as needed.
 
----
+The capture runs on the machine running Node, not on a remote browser visiting the computer page. The phone receives 48 kHz, 16-bit stereo PCM over WebSocket. Typical latency is hundreds of milliseconds and depends on the OS, network and phone; it is not synchronized with the computer's speakers.
 
-## Features
+## Operating system setup
 
-- 🔊 **Three audio sources** — tab or system audio (via `getDisplayMedia`), audio files (the phone becomes the *only* speaker), or the microphone.
-- 📲 **Zero install on the phone** — scan the QR code → tap ▶ → done.
-- 🎛 **Live controls** — volume on both ends, latency / jitter-buffer slider, pause, loop, seek, and an **“Also play here”** monitor toggle.
-- 📊 **Live diagnostics** — bitrate, bytes sent, network RTT, phone buffer depth, dropped frames, glitch counter, per-phone details.
-- 📡 **Multi-phone** — one computer can stream to several phones at once.
-- 🔁 **Adaptive jitter buffer** — an AudioWorklet ring buffer with hysteresis priming, underrun recovery and automatic resampling. It also absorbs the clock difference between the two devices (e.g. 48 000.4 Hz vs 47 998.9 Hz), so latency stays flat for hours. If the phone's browser can't run AudioWorklet, a scheduled-buffer fallback keeps the sound going.
-- 🔒 **HTTPS built in** — an auto-generated self-signed certificate (port 3443) so tab/system capture and microphone capture work over the LAN.
-- 🧪 **Tested** — `npm test` (8 protocol/relay assertions) and `npm run test:e2e` (22 real-Chromium end-to-end assertions over the entire audio pipeline).
+FFmpeg must be installed separately; it is not bundled. Check `ffmpeg -version` and `ffmpeg -devices`. A build without the relevant input device cannot capture audio.
 
-### How it works
+- **Windows:** FFmpeg's DirectShow input needs a loopback device. Install [screen-capture-recorder](https://github.com/rdp/screen-capture-recorder-to-video-windows-free) (its `virtual-audio-capturer`) or enable Stereo Mix if your driver supports it. Alternatively install VB-CABLE and configure Windows output routing so the mix is sent to the cable; use Windows Listen/monitoring or a mixer if you also want local speaker playback. Ensure the device is enabled and visible to FFmpeg. Restart the server or use Retry output after setup.
+- **macOS:** Install [BlackHole 2ch](https://github.com/ExistentialAudio/BlackHole), then use Audio MIDI Setup to create a Multi-Output Device containing BlackHole and your speakers. Select that as the system output; grant audio access if macOS prompts. FFmpeg must include `avfoundation`.
+- **Linux:** Run PulseAudio or PipeWire's PulseAudio compatibility server, install `pactl` (often `pulseaudio-utils`) and an FFmpeg build with `pulse` input. The default output sink's monitor is selected automatically. The default microphone is never used as a fallback.
 
-```
-┌─ PC browser ───────────────┐      ┌─ Node server (this PC) ─┐      ┌─ Phone browser ───────────┐
-│ tab / system / file / mic   │ PCM  │ WebSocket relay         │ PCM  │ jitter buffer + worklet   │
-│ → AudioWorklet (48 kHz)     │ ───► │ 1 sender → N receivers  │ ───► │ steer → speakers          │
-└─────────────────────────────┘ 20ms └─────────────────────────┘ 20ms └───────────────────────────┘
-```
-
-1. The computer captures audio in a Web Audio **AudioWorklet** and converts it to little-endian 16-bit PCM batches.
-2. Batches travel over a **WebSocket** to a small Node.js relay (HTTP + HTTPS, same port for both).
-3. The phone drops them into a second **AudioWorklet** — a ring "jitter buffer" that smooths Wi-Fi jitter, compensates for clock drift, and plays ~150 ms behind the write head.
-
----
-
-## Quick start
-
-```bash
-git clone https://github.com/Hrieeyzzz/phone-speaker.git
-cd phone-speaker
-npm install
-npm start
-```
-
-Then:
-
-1. Open the printed **Computer** URL — `http://localhost:3000/` (or the `https://…:3443/` one if you want tab or microphone capture).
-2. Pick a source, press **Start sending**.
-3. Scan the QR code with the phone (same Wi-Fi). Accept the certificate warning.
-4. Tap **▶ Start** on the phone.
-
-One-click launchers are included: `start.bat` (Windows) and `start.sh` (macOS/Linux).
-
-### Environment variables
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `PORT` | `3000` | HTTP port (page + relay) |
-| `HTTPS_PORT` | `3443` | HTTPS port (page + relay) |
-| `NO_HTTPS` | unset | `1` disables the HTTPS listener entirely |
-| `PHONE_SPEAKER_URL_FILE` | unset | write the startup URLs to this JSON file (used by tooling/tests) |
-
-### Tests
-
-```bash
-npm test           # protocol & relay tests — no extra dependencies
-npm run test:e2e   # full browser tests (see below)
-npm run make:wav   # regenerate tests/test.wav
-```
-
-The browser suite needs Chromium once:
-
-```bash
-npm install --no-save playwright-core
-npx playwright-core install chromium
-npm run test:e2e
-```
-
-If you already have Chrome/Chromium, skip the download and point at it:
-
-```bash
-CHROME_PATH=/path/to/chrome npm run test:e2e   # HEADFUL=1 to watch
-```
-
----
-
-## Using each source
-
-### Tab / system audio
-Pick **Tab / system audio**, choose a tab (or *Entire screen*) and tick **Also share tab audio** (Chrome) / pick *Share system audio* (Edge). Chrome mutes the captured tab locally, so the sound comes out of the phone — turn on **Also play here** to hear it on the computer too.
-
-> Needs the HTTPS page. Choose *Entire screen* + system audio to capture everything, not just one tab.
-
-### Audio file
-Pick **Audio file** and choose a file (`mp3`, `m4a`, `wav`, `ogg`, `flac`, …). The audio goes only to the phone: the computer decodes it but never sends it to its own speakers. Seek, loop and pause from the transport bar. When the file ends, press **Start sending** again to replay it.
-
-### Microphone
-Pick **Microphone**, allow permission, press **Start sending**. Useful for live monitoring, karaoke or testing the phone's speaker.
-
----
+If automatic discovery doesn't find your monitor, open **Output setup and troubleshooting** and refresh the device list. Only recognized output monitors/loopbacks are offered. The selection is stored locally in `.capture.json`. Test output checks the live stream; a silent peak can simply mean nothing is currently playing.
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| **No audio on the phone** | Tap ▶ on the phone page (browsers block audio until a gesture). Check volume on both ends. |
-| **“No audio track — tick Also share tab audio”** | In Chrome's picker, the *Share tab audio* checkbox must be on. Otherwise the tab is shared video-only. |
-| **Tab / mic buttons are disabled** | Open the **https://** URL instead of `http://`. Capture and AudioWorklet require a secure context. |
-| **“Your connection is not private”** | Expected for the self-signed certificate — choose *Advanced → Proceed*. It is generated locally on first run and stored in `.certs/`. |
-| **Phone can't open the QR URL** | Phone and computer must be on the same Wi-Fi, and the network must allow client-to-client traffic (guest/AP-isolated networks don't). |
-| **Stuttering / crackles** | Raise **Latency / jitter buffer** (e.g. 250–400 ms), move closer to the router, or stop large downloads. The phone page shows underruns live. |
-| **High latency (~0.5 s+)** | Lower the buffer to 80–100 ms. Bluetooth headphones on the phone add their own 150–300 ms on top. |
-| **Nothing happens on tap** | Safari on iOS needs the page in the foreground once; then use **Keep screen awake**. |
-| **Port already in use** | `PORT=8080 HTTPS_PORT=8443 npm start`. |
+- **Output unavailable:** Read the message on the computer page, verify ffmpeg and OS setup above, then retry. Some static FFmpeg builds omit PulseAudio or other input devices. Use a full system build instead.
+- **No sound:** Play audio on the computer, check the output level and routing, tap Play on the phone and check its volume. Some virtual drivers need explicit routing as described above.
+- **QR or connection fails:** Both devices must be able to reach one another on the same network; allow the Node process through the computer's firewall. Guest Wi-Fi and client isolation can prevent this.
+- **Certificate warning:** HTTPS uses a locally generated self-signed certificate. The phone must accept it. HTTP may work with a less capable audio fallback; HTTPS is recommended for AudioWorklet.
+- **Glitches:** Improve Wi-Fi reception or increase the phone buffer. PCM uses approximately 1.5 Mbit/s per phone.
 
----
+## Configuration
 
-## Project layout
+| Variable | Meaning |
+| --- | --- |
+| `PORT`, `HTTPS_PORT` | Listener ports (defaults 3000 and 3443) |
+| `NO_HTTPS=1` | Disable HTTPS |
+| `FFMPEG_PATH` | Path to an FFmpeg executable |
+| `CAPTURE_FORMAT`, `CAPTURE_INPUT` | Override automatic device discovery with an FFmpeg input format and input. Intended for advanced setups and testing. |
+| `CAPTURE_EXTRA` | Whitespace-separated FFmpeg input options (advanced) |
+| `PHONE_SPEAKER_URL_FILE` | Write startup URLs to a JSON file |
 
-```
-phone-speaker/
-├── server.js              # HTTP/HTTPS static server + WebSocket relay
-├── package.json
-├── start.bat / start.sh   # one-click launchers
-├── relay-test.js          # headless protocol/relay tests (8 checks)
-├── tests/
-│   ├── e2e.js             # full browser E2E tests (22 checks)
-│   ├── make-wav.js        # generates the test audio file
-│   └── test.wav
-├── docs/                  # screenshots for this README
-└── public/
-    ├── index.html         # computer page
-    ├── app-pc.js          # capture, sender, diagnostics
-    ├── pc.css
-    ├── phone.html         # phone page
-    ├── app-phone.js       # receiver, buffer UI, visualiser
-    ├── phone.css
-    ├── pcm-capture.js     # AudioWorklet: audio → PCM batches
-    └── pcm-player.js      # AudioWorklet: jitter buffer + drift correction
-```
+For a hardware-free pipeline test, start with `CAPTURE_FORMAT=lavfi CAPTURE_INPUT=sine=frequency=440:sample_rate=48000 npm start`. This produces a test tone, **not** the computer's audio.
 
-## License
+## Privacy and security
 
-MIT — see [LICENSE](LICENSE).
+The server listens on all network interfaces. Audio is available to clients that connect to the relay, and there is no authentication or end-to-end encryption. Use only on a trusted private network; do not expose the service to the public internet. HTTPS protects transport when the certificate is accepted, but does not restrict who can connect. Stop the server when not in use.
+
+## Tests
+
+`npm test` runs relay and synthetic FFmpeg capture integration tests; the capture test skips when FFmpeg is missing. These do not validate real OS audio routing or drivers. For browser tests, run `npm install --no-save playwright-core`, then `npx playwright-core install chromium` (or set `CHROME_PATH` to an existing Chromium executable), and run `npm run test:e2e`. Real device behavior must be verified on each target OS.
+
+MIT License. Copyright (c) 2026 Hrieeyzzz.
