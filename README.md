@@ -27,7 +27,7 @@ Run one tiny server on your computer, scan a QR code with your phone, and everyt
 - 📡 **Multi-phone** — one computer can stream to several phones at once.
 - 🔁 **Adaptive jitter buffer** — an AudioWorklet ring buffer with hysteresis priming, underrun recovery and automatic resampling. It also absorbs the clock difference between the two devices (e.g. 48 000.4 Hz vs 47 998.9 Hz), so latency stays flat for hours. If the phone's browser can't run AudioWorklet, a scheduled-buffer fallback keeps the sound going.
 - 🔒 **HTTPS built in** — an auto-generated self-signed certificate (port 3443) so tab/system capture and microphone capture work over the LAN.
-- 🧪 **Tested** — `npm test` (8 protocol/relay assertions) and `npm run test:e2e` (21 real-Chromium end-to-end assertions over the entire audio pipeline).
+- 🧪 **Tested** — `npm test` (8 protocol/relay assertions) and `npm run test:e2e` (22 real-Chromium end-to-end assertions over the entire audio pipeline).
 
 ### How it works
 
@@ -135,7 +135,7 @@ phone-speaker/
 ├── start.bat / start.sh   # one-click launchers
 ├── relay-test.js          # headless protocol/relay tests (8 checks)
 ├── tests/
-│   ├── e2e.js             # full browser E2E tests (21 checks)
+│   ├── e2e.js             # full browser E2E tests (22 checks)
 │   ├── make-wav.js        # generates the test audio file
 │   └── test.wav
 ├── docs/                  # screenshots for this README

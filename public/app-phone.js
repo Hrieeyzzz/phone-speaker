@@ -124,7 +124,9 @@
     // getByteFrequencyData() needs a Uint8Array — a Float32Array throws.
     S.vizBuf = new Uint8Array(S.analyser.frequencyBinCount);
 
-    S.node.connect(S.analyser);
+    // AudioWorkletNode has connect(), the fallback player owns its output gain.
+    if (S.node.connect) S.node.connect(S.analyser);
+    else S.node.outputNode.connect(S.analyser);
     S.analyser.connect(S.ac.destination);
 
     el.engine.textContent = S.engine;
@@ -151,7 +153,7 @@
     if (!S.node) return;
     if (S.node.port) {
       S.node.port.postMessage({ type: 'config', targetMs: S.targetMs, volume: S.volume, muted: S.muted });
-    } else if (S.node.setVolume) {
+    } else {
       S.node.setVolume(S.volume, S.muted);
     }
   }

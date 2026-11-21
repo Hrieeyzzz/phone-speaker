@@ -532,6 +532,33 @@ async function run() {
       else assert.match(primary.url, /^http:\/\//);
     });
 
+    await check('the fallback queue player works when AudioWorklet is unavailable', async () => {
+      // Simulate a browser/connection without AudioWorklet (e.g. plain HTTP on
+      // platforms where only a secure context exposes it).
+      const page = await ctx.newPage();
+      await page.addInitScript(() => {
+        Object.defineProperty(AudioContext.prototype, 'audioWorklet', { get: () => undefined, configurable: true });
+      });
+      page.on('pageerror', (e) => pageErrors.push(`fallback: ${e.message}`));
+      await page.goto(base + '/phone.html', { waitUntil: 'domcontentloaded' });
+      const engine = await waitFor(() => page.evaluate(() => window.__phoneSpeaker && window.__phoneSpeaker.state.engine), {
+        label: 'fallback engine',
+      });
+      assert.strictEqual(engine, 'fallback queue player');
+      await page.click('#big-play');
+      await waitFor(() => page.evaluate(() => window.__phoneSpeaker.state.playing), { label: 'fallback playing' });
+      // Feed the fallback player directly with 20 ms of PCM and check it queues.
+      const queued = await page.evaluate(() => {
+        const S = window.__phoneSpeaker.state;
+        const pcm = new Int16Array(1920);
+        for (let i = 0; i < pcm.length; i++) pcm[i] = Math.round(8000 * Math.sin(i / 12));
+        S.node.push(pcm.buffer);
+        return S.node.queue.length;
+      });
+      assert.strictEqual(queued, 1);
+      await page.close();
+    });
+
     await check('the server shuts down cleanly and frees its port', async () => {
       await app.close();
       await sleep(150);

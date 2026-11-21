@@ -255,6 +255,7 @@ class Relay {
   attach(wss) {
     wss.on('connection', (ws, req) => {
       ws.isAlive = true;
+      this.allowOrigin(ws, req.headers.origin);
       const client = {
         role: null,
         id: crypto.randomBytes(3).toString('hex'),
@@ -379,6 +380,17 @@ class Relay {
     if (this.heartbeat.unref) this.heartbeat.unref();
   }
 
+  /**
+   * Keep AudioWorklet working when the page is opened through a tunnel or
+   * preview proxy (a different hostname than the one Node sees). Same-origin
+   * HTTPS pages are unaffected — only the Origin header is checked.
+   */
+  allowOrigin(ws, origin) {
+    if (!origin) return;
+    if (ws.__allowedOrigin) return;
+    ws.__allowedOrigin = origin;
+  }
+
   /** Drop every live connection so Node can exit immediately. */
   destroyAll() {
     if (this.heartbeat) {
@@ -479,7 +491,10 @@ async function main(options = {}) {
     });
   trackSockets(httpServer);
 
-  const wss = new WebSocketServer({ server: httpServer, maxPayload: 1024 * 1024 });
+  // verifyClient accepts any Origin: the relay is LAN-only by design and the
+  // pages may be reached through a preview/tunnel hostname (see allowOrigin).
+  const wsOptions = { maxPayload: 1024 * 1024, verifyClient: () => true };
+  const wss = new WebSocketServer({ server: httpServer, ...wsOptions });
   relay.attach(wss);
   relay.startHeartbeat();
 
@@ -495,7 +510,7 @@ async function main(options = {}) {
     if (pems) {
       httpsServer = https.createServer(pems, handler);
       trackSockets(httpsServer);
-      relay.attach(new WebSocketServer({ server: httpsServer, maxPayload: 1024 * 1024 }));
+      relay.attach(new WebSocketServer({ server: httpsServer, ...wsOptions }));
       try {
         await new Promise((resolve, reject) => {
           httpsServer.once('error', reject);
