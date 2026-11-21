@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# generated self-signed certificate (created on first run)
+.certs/
+
+# logs & misc
+*.log
+npm-debug.log*
+.npm/
+.DS_Store
+Thumbs.db
+
+# test/CI droppings
+test-results/
+coverage/
+.tmp/
